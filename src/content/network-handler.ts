@@ -16,6 +16,7 @@ const API_PATTERNS = {
 
 let previousSkillsXp: Readonly<Record<string, number>> = {};
 let previousCombatState: string | undefined;
+const knownJobIds = new Set<string>();
 
 function tryParseJson(body: string): unknown {
   try {
@@ -43,6 +44,8 @@ function handleCharacterJobs(data: Record<string, unknown>): void {
 
     const jobId = job["jobId"];
     if (typeof jobId !== "string") continue;
+    if (knownJobIds.has(jobId)) continue;
+    knownJobIds.add(jobId);
 
     const skill = typeof job["skill"] === "string"
       ? apiSkillToSkillName(job["skill"])
@@ -181,4 +184,5 @@ export function handleInterceptedResponse(response: InterceptedResponse): void {
 export function resetNetworkHandlerState(): void {
   previousSkillsXp = {};
   previousCombatState = undefined;
+  knownJobIds.clear();
 }

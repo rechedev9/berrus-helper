@@ -14,7 +14,7 @@ const LOG_LEVELS: Readonly<Record<LogLevel, number>> = {
   error: 3,
 } as const;
 
-export function createLogger(prefix: string, minLevel: LogLevel = "debug"): Logger {
+export function createLogger(prefix: string, minLevel: LogLevel = "info"): Logger {
   const threshold = LOG_LEVELS[minLevel];
 
   function log(level: LogLevel, message: string, data?: unknown): void {
