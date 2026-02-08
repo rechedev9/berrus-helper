@@ -156,7 +156,7 @@ function handleRewardsResponse(data: unknown): void {
 }
 
 export function handleInterceptedResponse(response: InterceptedResponse): void {
-  logger.info(`Intercepted response: ${response.url} (status ${response.status})`);
+  logger.debug(`Intercepted response: ${response.url} (status ${response.status})`);
 
   if (response.status < 200 || response.status >= 300) return;
 
@@ -166,13 +166,13 @@ export function handleInterceptedResponse(response: InterceptedResponse): void {
   const { url } = response;
 
   if (API_PATTERNS.character.test(url)) {
-    logger.info("Matched pattern: character");
+    logger.debug("Matched pattern: character");
     handleCharacterResponse(data);
   } else if (API_PATTERNS.rewards.test(url)) {
-    logger.info("Matched pattern: rewards");
+    logger.debug("Matched pattern: rewards");
     handleRewardsResponse(data);
   } else if (API_PATTERNS.jobs.test(url)) {
-    logger.info("Matched pattern: jobs");
+    logger.debug("Matched pattern: jobs");
     handleCharacterJobs(isRecord(data) ? data : {});
   }
 }

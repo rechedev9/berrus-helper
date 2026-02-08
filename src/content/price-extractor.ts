@@ -80,15 +80,12 @@ function extractPriceFromTriplet(
 }
 
 export function extractPrices(): Result<readonly PriceSnapshot[], string> {
-  logger.info("Attempting price extraction via pesetas image anchoring");
+  logger.debug("Attempting price extraction via pesetas image anchoring");
 
   const pesetasImages = findImagesByAttribute(PESETAS_PATTERN);
-  logger.info("Pesetas images found", { count: pesetasImages.length });
+  logger.debug("Pesetas images found", { count: pesetasImages.length });
 
   if (pesetasImages.length === 0) {
-    logger.warn("No pesetas currency images found on page", {
-      hint: "Page may not contain shop items or DOM structure changed",
-    });
     return ok([]);
   }
 
@@ -104,7 +101,7 @@ export function extractPrices(): Result<readonly PriceSnapshot[], string> {
 
   const failedCount = pesetasImages.length - snapshots.length;
   if (failedCount > 0) {
-    logger.warn("Some pesetas images failed triplet extraction", {
+    logger.debug("Some pesetas images failed triplet extraction", {
       total: pesetasImages.length,
       extracted: snapshots.length,
       failed: failedCount,
@@ -112,7 +109,7 @@ export function extractPrices(): Result<readonly PriceSnapshot[], string> {
   }
 
   if (snapshots.length > 0) {
-    logger.info("Successfully extracted prices", {
+    logger.debug("Successfully extracted prices", {
       count: snapshots.length,
       items: snapshots.map((s) => ({ item: s.itemName, price: s.price })),
     });

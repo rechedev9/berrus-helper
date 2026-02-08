@@ -152,15 +152,12 @@ function extractJobFromContainer(container: Element): IdleJob | undefined {
 }
 
 export function extractActiveJobs(): Result<readonly IdleJob[], string> {
-  logger.info("Attempting job extraction via content-based scanning");
+  logger.debug("Attempting job extraction via content-based scanning");
 
   const timerElements = findElementsByText(TIMER_PATTERN);
-  logger.info("Timer elements found", { count: timerElements.length });
+  logger.debug("Timer elements found", { count: timerElements.length });
 
   if (timerElements.length === 0) {
-    logger.warn("No timer elements found on page", {
-      hint: "Page may not contain queued jobs or DOM structure changed",
-    });
     return ok([]);
   }
 
@@ -179,12 +176,12 @@ export function extractActiveJobs(): Result<readonly IdleJob[], string> {
   }
 
   if (jobs.length > 0) {
-    logger.info("Successfully extracted jobs", {
+    logger.debug("Successfully extracted jobs", {
       count: jobs.length,
       jobs: jobs.map((j) => ({ id: j.id, skill: j.skill, name: j.name })),
     });
   } else {
-    logger.warn("Timer elements found but no jobs could be extracted", {
+    logger.debug("Timer elements found but no jobs could be extracted", {
       timerCount: timerElements.length,
     });
   }
