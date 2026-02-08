@@ -1,19 +1,21 @@
 import type { InterceptedResponse } from "../utils/network-interceptor.ts";
 import type { SessionEvent } from "../types/session.ts";
+import type { IdleJob } from "../types/jobs.ts";
 import { sendMessage } from "../utils/messages.ts";
 import { createLogger } from "../utils/logger.ts";
 import { isRecord } from "../utils/type-guards.ts";
+import { apiSkillToSkillName } from "../utils/skill-mapping.ts";
 
 const logger = createLogger("network-handler");
 
-// URL patterns for different game API endpoints
 const API_PATTERNS = {
-  jobs: /\/api\/.*jobs|\/api\/.*idle/i,
-  items: /\/api\/.*items|\/api\/.*inventory/i,
-  combat: /\/api\/.*combat|\/api\/.*battle/i,
-  skills: /\/api\/.*skills|\/api\/.*xp/i,
-  market: /\/api\/.*market|\/api\/.*shop|\/api\/.*mercadillo/i,
+  character: /\/api\/protected\/character\/(?!all\b)[^/]+(\?.*)?$/,
+  rewards: /\/api\/protected\/character\/.*\/protected\/rewards/,
+  jobs: /\/api\/protected\/character\/.*\/protected\/jobs/,
 } as const;
+
+let previousSkillsXp: Readonly<Record<string, number>> = {};
+let previousCombatState: string | undefined;
 
 function tryParseJson(body: string): unknown {
   try {
@@ -23,89 +25,160 @@ function tryParseJson(body: string): unknown {
   }
 }
 
-function handleJobResponse(data: unknown): void {
+function handleCharacterResponse(data: unknown): void {
   if (!isRecord(data)) return;
 
-  // Look for job-related data in the response
-  // The exact shape depends on the Berrus API — this handles common patterns
-  logger.info("Job-related API response detected", { data });
+  handleCharacterJobs(data);
+  handleCharacterSkillsXp(data);
+  handleCharacterCombat(data);
 }
 
-function handleXpResponse(data: unknown): void {
-  if (!isRecord(data)) return;
+function handleCharacterJobs(data: Record<string, unknown>): void {
+  const jobs = data["jobs"];
+  if (!Array.isArray(jobs)) return;
 
-  const skill = data["skill"];
-  const xp = data["xp"] ?? data["experience"];
-  const level = data["level"];
+  for (const job of jobs) {
+    if (!isRecord(job)) continue;
+    if (job["status"] !== "active") continue;
 
-  if (typeof skill === "string" && typeof xp === "number") {
-    const event: SessionEvent = {
-      type: "xp_gained",
-      timestamp: Date.now(),
-      data: {
-        skill,
-        xp,
-        levels: typeof level === "number" ? level : 0,
-      },
+    const jobId = job["jobId"];
+    if (typeof jobId !== "string") continue;
+
+    const skill = typeof job["skill"] === "string"
+      ? apiSkillToSkillName(job["skill"])
+      : undefined;
+
+    const startedAt = typeof job["startedAt"] === "number"
+      ? job["startedAt"]
+      : Date.now();
+    const durationMs = typeof job["durationMs"] === "number"
+      ? job["durationMs"]
+      : 0;
+
+    const idleJob: IdleJob = {
+      id: jobId,
+      skill: skill ?? "Mineria",
+      name: jobId,
+      startedAt,
+      durationMs,
+      endsAt: startedAt + durationMs,
     };
 
-    sendMessage({ type: "XP_GAINED", event }).catch((e: unknown) => {
-      logger.error("Failed to send XP event", e);
+    logger.info(`Job detected: ${jobId} (skill: ${skill ?? "unknown"})`);
+    sendMessage({ type: "JOB_DETECTED", job: idleJob }).catch((e: unknown) => {
+      logger.error("Failed to send job event", e);
     });
   }
 }
 
-function handleCombatResponse(data: unknown): void {
-  if (!isRecord(data)) return;
+function handleCharacterSkillsXp(data: Record<string, unknown>): void {
+  const skillsXp = data["skillsXp"];
+  if (!isRecord(skillsXp)) return;
 
-  const result = data["result"] ?? data["outcome"];
+  for (const [apiSkill, currentXp] of Object.entries(skillsXp)) {
+    if (typeof currentXp !== "number") continue;
+
+    const previousXp = previousSkillsXp[apiSkill];
+    if (previousXp === undefined || currentXp <= previousXp) continue;
+
+    const skill = apiSkillToSkillName(apiSkill);
+    if (!skill) continue;
+
+    const delta = currentXp - previousXp;
+    const event: SessionEvent = {
+      type: "xp_gained",
+      timestamp: Date.now(),
+      data: { skill, xp: delta },
+    };
+
+    logger.info(`XP gained: ${skill} +${delta}`);
+    sendMessage({ type: "XP_GAINED", event }).catch((e: unknown) => {
+      logger.error("Failed to send XP event", e);
+    });
+  }
+
+  previousSkillsXp = Object.fromEntries(
+    Object.entries(skillsXp).filter(
+      (entry): entry is [string, number] => typeof entry[1] === "number",
+    ),
+  );
+}
+
+function handleCharacterCombat(data: Record<string, unknown>): void {
+  const activeCombat = data["activeCombat"];
+  if (!isRecord(activeCombat)) {
+    previousCombatState = undefined;
+    return;
+  }
+
+  const result = activeCombat["result"];
   if (typeof result !== "string") return;
 
-  const eventType =
-    result === "win" || result === "victory" ? "combat_kill" : "combat_death";
+  if (result === previousCombatState) return;
+  previousCombatState = result;
+
+  const eventType = result === "win" || result === "victory"
+    ? "combat_kill"
+    : "combat_death";
+
   const event: SessionEvent = {
     type: eventType,
     timestamp: Date.now(),
     data: { result },
   };
 
+  logger.info(`Combat event: ${eventType}`);
   sendMessage({ type: "SESSION_EVENT", event }).catch((e: unknown) => {
     logger.error("Failed to send combat event", e);
   });
 }
 
-function handleItemResponse(data: unknown): void {
-  if (!isRecord(data)) return;
+function handleRewardsResponse(data: unknown): void {
+  if (!Array.isArray(data)) return;
 
-  const itemName = data["name"] ?? data["itemName"];
-  if (typeof itemName !== "string") return;
+  for (const reward of data) {
+    if (!isRecord(reward)) continue;
 
-  const event: SessionEvent = {
-    type: "item_collected",
-    timestamp: Date.now(),
-    data: { itemName },
-  };
+    const itemName = reward["name"] ?? reward["itemName"];
+    if (typeof itemName !== "string") continue;
 
-  sendMessage({ type: "ITEM_COLLECTED", event }).catch((e: unknown) => {
-    logger.error("Failed to send item event", e);
-  });
+    const event: SessionEvent = {
+      type: "item_collected",
+      timestamp: Date.now(),
+      data: { itemName },
+    };
+
+    logger.info(`Reward collected: ${itemName}`);
+    sendMessage({ type: "ITEM_COLLECTED", event }).catch((e: unknown) => {
+      logger.error("Failed to send item event", e);
+    });
+  }
 }
 
 export function handleInterceptedResponse(response: InterceptedResponse): void {
+  logger.info(`Intercepted response: ${response.url} (status ${response.status})`);
+
   if (response.status < 200 || response.status >= 300) return;
 
   const data = tryParseJson(response.body);
-  if (!data) return;
+  if (data === undefined) return;
 
   const { url } = response;
 
-  if (API_PATTERNS.skills.test(url)) {
-    handleXpResponse(data);
-  } else if (API_PATTERNS.combat.test(url)) {
-    handleCombatResponse(data);
-  } else if (API_PATTERNS.items.test(url)) {
-    handleItemResponse(data);
+  if (API_PATTERNS.character.test(url)) {
+    logger.info("Matched pattern: character");
+    handleCharacterResponse(data);
+  } else if (API_PATTERNS.rewards.test(url)) {
+    logger.info("Matched pattern: rewards");
+    handleRewardsResponse(data);
   } else if (API_PATTERNS.jobs.test(url)) {
-    handleJobResponse(data);
+    logger.info("Matched pattern: jobs");
+    handleCharacterJobs(isRecord(data) ? data : {});
   }
+}
+
+/** Reset internal state — for testing only. */
+export function resetNetworkHandlerState(): void {
+  previousSkillsXp = {};
+  previousCombatState = undefined;
 }

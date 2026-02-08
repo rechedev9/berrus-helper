@@ -3,6 +3,12 @@ import { extractPrices } from "./price-extractor.ts";
 import { processAddedNode } from "./session-tracker.ts";
 import { sendMessage } from "../utils/messages.ts";
 import { createLogger } from "../utils/logger.ts";
+import {
+  detectSelectors,
+  detectTextPatterns,
+  suggestJobSelectors,
+  suggestPriceSelectors,
+} from "../utils/selector-detective.ts";
 
 const logger = createLogger("dom-observer");
 
@@ -10,6 +16,7 @@ const DEBOUNCE_MS = 500;
 
 let jobDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let priceDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let activeObserver: MutationObserver | null = null;
 
 const knownJobIds = new Set<string>();
 
@@ -59,8 +66,27 @@ function handleMutations(mutations: readonly MutationRecord[]): void {
   priceDebounceTimer = setTimeout(processPriceChanges, DEBOUNCE_MS);
 }
 
+export function stopObserver(): void {
+  if (activeObserver) {
+    activeObserver.disconnect();
+    activeObserver = null;
+    logger.info("DOM observer stopped");
+  }
+  if (jobDebounceTimer) {
+    clearTimeout(jobDebounceTimer);
+    jobDebounceTimer = null;
+  }
+  if (priceDebounceTimer) {
+    clearTimeout(priceDebounceTimer);
+    priceDebounceTimer = null;
+  }
+}
+
 export function startObserver(): MutationObserver {
+  stopObserver();
+
   const observer = new MutationObserver(handleMutations);
+  activeObserver = observer;
 
   observer.observe(document.body, {
     childList: true,
@@ -74,4 +100,26 @@ export function startObserver(): MutationObserver {
   processPriceChanges();
 
   return observer;
+}
+
+/**
+ * Debug helper: Run selector detection to identify potential selectors.
+ * Call this from browser console: `window.__debugSelectors()`
+ */
+export function runSelectorDetection(): void {
+  logger.info("=== SELECTOR DETECTION STARTED ===");
+
+  logger.info("--- Checking job selectors ---");
+  detectSelectors(suggestJobSelectors(), { includeSampleHtml: true });
+
+  logger.info("--- Checking price selectors ---");
+  detectSelectors(suggestPriceSelectors(), { includeSampleHtml: true });
+
+  logger.info("--- Checking content-based text patterns ---");
+  detectTextPatterns();
+
+  logger.info("=== SELECTOR DETECTION COMPLETE ===");
+  logger.info(
+    "Check console logs above to see which selectors and patterns matched elements",
+  );
 }

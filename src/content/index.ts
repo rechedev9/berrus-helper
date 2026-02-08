@@ -1,12 +1,24 @@
 import { onInterceptedResponse } from "../utils/network-interceptor.ts";
 import { handleInterceptedResponse } from "./network-handler.ts";
-import { startObserver } from "./dom-observer.ts";
+import {
+  startObserver,
+  stopObserver,
+  runSelectorDetection,
+} from "./dom-observer.ts";
 import { sendMessage } from "../utils/messages.ts";
 import { createLogger } from "../utils/logger.ts";
 
 const logger = createLogger("content");
 
+let initialized = false;
+
 function init(): void {
+  if (initialized) {
+    logger.info("Content script already initialized, re-initializing");
+    stopObserver();
+  }
+  initialized = true;
+
   logger.info("Berrus Helper content script initializing");
 
   // Listen for intercepted API responses (interceptor runs via manifest "world": "MAIN")
@@ -21,6 +33,12 @@ function init(): void {
   });
 
   logger.info("Berrus Helper content script initialized");
+
+  // Expose debug helper on window for manual testing
+  // Usage: window.__berrusDebug.detectSelectors()
+  (window as unknown as Record<string, unknown>)["__berrusDebug"] = {
+    detectSelectors: runSelectorDetection,
+  };
 }
 
 init();
