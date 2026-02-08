@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=380, initial-scale=1.0" />
+    <title>Berrus Helper</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="header">
+        <h1 class="header__title">Berrus Helper</h1>
+      </header>
+
+      <nav class="tabs" role="tablist">
+        <button
+          class="tabs__btn tabs__btn--active"
+          role="tab"
+          aria-selected="true"
+          data-tab="timers"
+        >
+          Timers
+        </button>
+        <button
+          class="tabs__btn"
+          role="tab"
+          aria-selected="false"
+          data-tab="prices"
+        >
+          Prices
+        </button>
+        <button
+          class="tabs__btn"
+          role="tab"
+          aria-selected="false"
+          data-tab="hiscores"
+        >
+          Hiscores
+        </button>
+        <button
+          class="tabs__btn"
+          role="tab"
+          aria-selected="false"
+          data-tab="session"
+        >
+          Session
+        </button>
+      </nav>
+
+      <main class="content">
+        <section
+          id="panel-timers"
+          class="panel panel--active"
+          role="tabpanel"
+        ></section>
+        <section id="panel-prices" class="panel" role="tabpanel"></section>
+        <section id="panel-hiscores" class="panel" role="tabpanel"></section>
+        <section id="panel-session" class="panel" role="tabpanel"></section>
+      </main>
+
+      <footer class="footer">
+        <span class="footer__status" id="connection-status">Disconnected</span>
+      </footer>
+    </div>
+
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>

@@ -1,0 +1,77 @@
+import { extractActiveJobs } from "./job-extractor.ts";
+import { extractPrices } from "./price-extractor.ts";
+import { processAddedNode } from "./session-tracker.ts";
+import { sendMessage } from "../utils/messages.ts";
+import { createLogger } from "../utils/logger.ts";
+
+const logger = createLogger("dom-observer");
+
+const DEBOUNCE_MS = 500;
+
+let jobDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let priceDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+const knownJobIds = new Set<string>();
+
+function processJobChanges(): void {
+  const result = extractActiveJobs();
+  if (!result.ok) return;
+
+  for (const job of result.value) {
+    if (!knownJobIds.has(job.id)) {
+      knownJobIds.add(job.id);
+      sendMessage({ type: "JOB_DETECTED", job }).catch((e: unknown) => {
+        logger.error("Failed to send job detected", e);
+      });
+    }
+  }
+}
+
+function processPriceChanges(): void {
+  const result = extractPrices();
+  if (!result.ok) return;
+
+  for (const snapshot of result.value) {
+    sendMessage({ type: "PRICE_SNAPSHOT", snapshot }).catch((e: unknown) => {
+      logger.error("Failed to send price snapshot", e);
+    });
+  }
+}
+
+function handleMutations(mutations: readonly MutationRecord[]): void {
+  let hasNewNodes = false;
+
+  for (const mutation of mutations) {
+    for (const node of Array.from(mutation.addedNodes)) {
+      hasNewNodes = true;
+      processAddedNode(node);
+    }
+  }
+
+  if (!hasNewNodes) return;
+
+  // Debounce job extraction
+  if (jobDebounceTimer) clearTimeout(jobDebounceTimer);
+  jobDebounceTimer = setTimeout(processJobChanges, DEBOUNCE_MS);
+
+  // Debounce price extraction
+  if (priceDebounceTimer) clearTimeout(priceDebounceTimer);
+  priceDebounceTimer = setTimeout(processPriceChanges, DEBOUNCE_MS);
+}
+
+export function startObserver(): MutationObserver {
+  const observer = new MutationObserver(handleMutations);
+
+  observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+  });
+
+  logger.info("DOM observer started");
+
+  // Run initial extraction
+  processJobChanges();
+  processPriceChanges();
+
+  return observer;
+}
