@@ -6,6 +6,8 @@ import type { JobTimerState } from "../types/jobs.ts";
 
 const logger = createLogger("alarm-handler");
 
+const MAX_COMPLETED_JOB_IDS = 500;
+
 export async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
   const jobId = jobIdFromAlarmName(alarm.name);
   if (!jobId) {
@@ -34,11 +36,16 @@ export async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
     notifyJobComplete(completedJob);
   }
 
-  await updateStorage("jobTimers", (current: JobTimerState | undefined): JobTimerState => {
-    const state = current ?? { activeJobs: [], completedJobIds: [] };
-    return {
-      activeJobs: state.activeJobs.filter((j) => j.id !== jobId),
-      completedJobIds: [...state.completedJobIds, jobId],
-    };
-  });
+  await updateStorage(
+    "jobTimers",
+    (current: JobTimerState | undefined): JobTimerState => {
+      const state = current ?? { activeJobs: [], completedJobIds: [] };
+      return {
+        activeJobs: state.activeJobs.filter((j) => j.id !== jobId),
+        completedJobIds: [...state.completedJobIds, jobId].slice(
+          -MAX_COMPLETED_JOB_IDS,
+        ),
+      };
+    },
+  );
 }

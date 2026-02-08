@@ -1,10 +1,17 @@
-import type { SessionStats, SessionEvent, SkillGain } from "../types/session.ts";
+import type {
+  SessionStats,
+  SessionEvent,
+  SkillGain,
+} from "../types/session.ts";
 import type { Result } from "../types/result.ts";
 import { ok } from "../types/result.ts";
-import { getStorage, setStorage } from "../utils/storage.ts";
+import { getStorage, setStorage, updateStorage } from "../utils/storage.ts";
+import { isSkillName } from "../utils/type-guards.ts";
 import { createLogger } from "../utils/logger.ts";
 
 const logger = createLogger("session-manager");
+
+const MAX_SESSION_EVENTS = 1000;
 
 function createEmptySession(): SessionStats {
   const now = Date.now();
@@ -24,6 +31,15 @@ function createEmptySession(): SessionStats {
   };
 }
 
+function numericField(event: SessionEvent, field: string): number {
+  const value = event.data[field];
+  return typeof value === "number" ? value : 0;
+}
+
+function countIf(event: SessionEvent, type: SessionEvent["type"]): number {
+  return event.type === type ? 1 : 0;
+}
+
 function updateSkillGains(
   existing: readonly SkillGain[],
   event: SessionEvent,
@@ -32,27 +48,22 @@ function updateSkillGains(
 
   const skill = event.data["skill"];
   const xp = event.data["xp"];
-  const levels = event.data["levels"];
 
-  if (typeof skill !== "string" || typeof xp !== "number") return existing;
+  if (!isSkillName(skill) || typeof xp !== "number") return existing;
 
+  const levelDelta = numericField(event, "levels");
   const gains = [...existing];
   const idx = gains.findIndex((g) => g.skill === skill);
+  const current = idx >= 0 ? gains[idx] : undefined;
 
-  if (idx >= 0) {
-    const current = gains[idx];
-    if (!current) return existing;
+  if (current) {
     gains[idx] = {
       skill: current.skill,
       xpGained: current.xpGained + xp,
-      levelsGained: current.levelsGained + (typeof levels === "number" ? levels : 0),
+      levelsGained: current.levelsGained + levelDelta,
     };
   } else {
-    gains.push({
-      skill: skill as SkillGain["skill"],
-      xpGained: xp,
-      levelsGained: typeof levels === "number" ? levels : 0,
-    });
+    gains.push({ skill, xpGained: xp, levelsGained: levelDelta });
   }
 
   return gains;
@@ -65,50 +76,43 @@ export async function startSession(): Promise<Result<SessionStats, string>> {
   return ok(session);
 }
 
-export async function addSessionEvent(event: SessionEvent): Promise<Result<void, string>> {
-  const result = await getStorage(["currentSession"]);
+export async function addSessionEvent(
+  event: SessionEvent,
+): Promise<Result<void, string>> {
+  const result = await updateStorage("currentSession", (current) => {
+    const session = current ?? createEmptySession();
+    const now = Date.now();
+
+    return {
+      ...session,
+      lastActivityAt: now,
+      durationMs: now - session.startedAt,
+      skillGains: updateSkillGains(session.skillGains, event),
+      totalXpGained:
+        session.totalXpGained +
+        (event.type === "xp_gained" ? numericField(event, "xp") : 0),
+      itemsCollected:
+        session.itemsCollected + countIf(event, "item_collected"),
+      pesetasEarned:
+        session.pesetasEarned +
+        (event.type === "item_sold" ? numericField(event, "amount") : 0),
+      pesetasSpent:
+        session.pesetasSpent +
+        (event.type === "item_bought" ? numericField(event, "amount") : 0),
+      combatKills: session.combatKills + countIf(event, "combat_kill"),
+      combatDeaths: session.combatDeaths + countIf(event, "combat_death"),
+      jobsCompleted: session.jobsCompleted + countIf(event, "job_completed"),
+      events: [...session.events, event].slice(-MAX_SESSION_EVENTS),
+    };
+  });
+
   if (!result.ok) return result;
-
-  let session = result.value.currentSession;
-  if (!session) {
-    const startResult = await startSession();
-    if (!startResult.ok) return startResult;
-    session = startResult.value;
-  }
-
-  const now = Date.now();
-  const xpFromEvent = event.type === "xp_gained" && typeof event.data["xp"] === "number"
-    ? event.data["xp"]
-    : 0;
-
-  const updated: SessionStats = {
-    ...session,
-    lastActivityAt: now,
-    durationMs: now - session.startedAt,
-    skillGains: updateSkillGains(session.skillGains, event),
-    totalXpGained: session.totalXpGained + xpFromEvent,
-    itemsCollected: session.itemsCollected + (event.type === "item_collected" ? 1 : 0),
-    pesetasEarned: session.pesetasEarned + (
-      event.type === "item_sold" && typeof event.data["amount"] === "number"
-        ? event.data["amount"]
-        : 0
-    ),
-    pesetasSpent: session.pesetasSpent + (
-      event.type === "item_bought" && typeof event.data["amount"] === "number"
-        ? event.data["amount"]
-        : 0
-    ),
-    combatKills: session.combatKills + (event.type === "combat_kill" ? 1 : 0),
-    combatDeaths: session.combatDeaths + (event.type === "combat_death" ? 1 : 0),
-    jobsCompleted: session.jobsCompleted + (event.type === "job_completed" ? 1 : 0),
-    events: [...session.events, event],
-  };
-
-  await setStorage({ currentSession: updated });
   return ok(undefined);
 }
 
-export async function getSessionStats(): Promise<Result<SessionStats | null, string>> {
+export async function getSessionStats(): Promise<
+  Result<SessionStats | null, string>
+> {
   const result = await getStorage(["currentSession"]);
   if (!result.ok) return result;
   return ok(result.value.currentSession ?? null);

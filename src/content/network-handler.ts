@@ -2,6 +2,7 @@ import type { InterceptedResponse } from "../utils/network-interceptor.ts";
 import type { SessionEvent } from "../types/session.ts";
 import { sendMessage } from "../utils/messages.ts";
 import { createLogger } from "../utils/logger.ts";
+import { isRecord } from "../utils/type-guards.ts";
 
 const logger = createLogger("network-handler");
 
@@ -20,10 +21,6 @@ function tryParseJson(body: string): unknown {
   } catch {
     return undefined;
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function handleJobResponse(data: unknown): void {
@@ -64,7 +61,8 @@ function handleCombatResponse(data: unknown): void {
   const result = data["result"] ?? data["outcome"];
   if (typeof result !== "string") return;
 
-  const eventType = result === "win" || result === "victory" ? "combat_kill" : "combat_death";
+  const eventType =
+    result === "win" || result === "victory" ? "combat_kill" : "combat_death";
   const event: SessionEvent = {
     type: eventType,
     timestamp: Date.now(),

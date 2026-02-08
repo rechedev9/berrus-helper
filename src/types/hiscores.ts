@@ -1,6 +1,7 @@
+import { SKILLS } from "./skills.ts";
 import type { SkillName } from "./skills.ts";
 
-export const HISCORE_CATEGORIES = ["total", "combat", ...[] as SkillName[]] as const;
+export const HISCORE_CATEGORIES = ["total", "combat", ...SKILLS] as const;
 
 export type HiscoreCategory = "total" | "combat" | SkillName;
 

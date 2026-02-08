@@ -1,4 +1,8 @@
-import type { HiscoreCategory, HiscoreEntry, HiscoreSearchResult } from "../types/hiscores.ts";
+import type {
+  HiscoreCategory,
+  HiscoreEntry,
+  HiscoreSearchResult,
+} from "../types/hiscores.ts";
 import type { Result } from "../types/result.ts";
 import { ok, err } from "../types/result.ts";
 import { createLogger } from "../utils/logger.ts";
@@ -7,15 +11,14 @@ const logger = createLogger("hiscore-fetcher");
 
 const BERRUS_HISCORE_URL = "https://www.berrus.app/hiscores";
 
-function parseHiscoreHtml(html: string, category: HiscoreCategory): readonly HiscoreEntry[] {
+function parseHiscoreHtml(
+  html: string,
+  category: HiscoreCategory,
+): readonly HiscoreEntry[] {
+  const rowPattern = /(\d+)\s*[.\-)\s]+([A-Za-z0-9_]+)\s+(\d+)\s+([\d,]+)/g;
   const entries: HiscoreEntry[] = [];
 
-  // Look for player data patterns in the HTML/RSC payload
-  // Pattern: rank, name, level, xp in table rows or JSON-like structures
-  const rowPattern = /(\d+)\s*[.\-)\s]+([A-Za-z0-9_]+)\s+(\d+)\s+([\d,]+)/g;
-  let match = rowPattern.exec(html);
-
-  while (match) {
+  for (const match of html.matchAll(rowPattern)) {
     const rank = parseInt(match[1] ?? "0", 10);
     const playerName = match[2] ?? "";
     const level = parseInt(match[3] ?? "0", 10);
@@ -24,8 +27,6 @@ function parseHiscoreHtml(html: string, category: HiscoreCategory): readonly His
     if (rank > 0 && playerName.length > 0) {
       entries.push({ rank, playerName, level, xp, category });
     }
-
-    match = rowPattern.exec(html);
   }
 
   return entries;
@@ -47,12 +48,10 @@ export async function searchHiscores(
     const html = await response.text();
     const entries = parseHiscoreHtml(html, category);
 
-    // Filter for the searched player if entries were found
-    const filtered = entries.length > 0
-      ? entries.filter(
-          (e) => e.playerName.toLowerCase().includes(playerName.toLowerCase()),
-        )
-      : entries;
+    const lowerName = playerName.toLowerCase();
+    const filtered = entries.filter((e) =>
+      e.playerName.toLowerCase().includes(lowerName),
+    );
 
     return ok({
       query: playerName,
@@ -62,7 +61,11 @@ export async function searchHiscores(
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : String(e);
-    logger.error("Hiscore search failed", { playerName, category, error: message });
+    logger.error("Hiscore search failed", {
+      playerName,
+      category,
+      error: message,
+    });
     return err(`Hiscore search failed: ${message}`);
   }
 }

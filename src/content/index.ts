@@ -1,4 +1,4 @@
-import { installNetworkInterceptor, onInterceptedResponse } from "../utils/network-interceptor.ts";
+import { onInterceptedResponse } from "../utils/network-interceptor.ts";
 import { handleInterceptedResponse } from "./network-handler.ts";
 import { startObserver } from "./dom-observer.ts";
 import { sendMessage } from "../utils/messages.ts";
@@ -9,10 +9,7 @@ const logger = createLogger("content");
 function init(): void {
   logger.info("Berrus Helper content script initializing");
 
-  // Install network interceptor in the main world
-  installNetworkInterceptor();
-
-  // Listen for intercepted API responses
+  // Listen for intercepted API responses (interceptor runs via manifest "world": "MAIN")
   onInterceptedResponse(handleInterceptedResponse);
 
   // Start DOM observation for game events

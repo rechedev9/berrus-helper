@@ -1,4 +1,7 @@
-import type { ExtensionMessage, MessageResponseMap } from "../types/messages.ts";
+import type {
+  ExtensionMessage,
+  MessageResponseMap,
+} from "../types/messages.ts";
 import type { Result } from "../types/result.ts";
 import { ok, err } from "../types/result.ts";
 import { isExtensionMessage } from "./type-guards.ts";
@@ -10,11 +13,17 @@ export async function sendMessage<T extends ExtensionMessage["type"]>(
   message: Extract<ExtensionMessage, { readonly type: T }>,
 ): Promise<Result<MessageResponseMap[T], string>> {
   try {
-    const response = (await chrome.runtime.sendMessage(message)) as MessageResponseMap[T];
+    // TS limitation: chrome.runtime.sendMessage returns untyped Promise
+    const response = (await chrome.runtime.sendMessage(
+      message,
+    )) as MessageResponseMap[T];
     return ok(response);
   } catch (e: unknown) {
     const errorMessage = e instanceof Error ? e.message : String(e);
-    logger.error("Failed to send message", { type: message.type, error: errorMessage });
+    logger.error("Failed to send message", {
+      type: message.type,
+      error: errorMessage,
+    });
     return err(`Message send failed: ${errorMessage}`);
   }
 }
@@ -40,6 +49,7 @@ export function onMessage(handlers: HandlerMap): void {
         return false;
       }
 
+      // TS limitation: indexed access on discriminated union loses type narrowing
       const handler = handlers[rawMessage.type] as
         | MessageHandler<typeof rawMessage.type>
         | undefined;
@@ -49,15 +59,14 @@ export function onMessage(handlers: HandlerMap): void {
         return false;
       }
 
+      // TS limitation: handler expects narrowed type but rawMessage is union
       const result = handler(rawMessage as never, sender);
 
       if (result instanceof Promise) {
-        result
-          .then(sendResponse)
-          .catch((e: unknown) => {
-            logger.error("Handler error", { type: rawMessage.type, error: e });
-            sendResponse({ success: false });
-          });
+        result.then(sendResponse).catch((e: unknown) => {
+          logger.error("Handler error", { type: rawMessage.type, error: e });
+          sendResponse({ success: false });
+        });
         return true; // async response
       }
 

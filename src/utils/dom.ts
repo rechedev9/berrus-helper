@@ -34,18 +34,26 @@ export function waitForElement<T extends Element>(
       return;
     }
 
+    let settled = false;
+
+    function settle(result: Result<T, string>): void {
+      if (settled) return;
+      settled = true;
+      observer.disconnect();
+      clearTimeout(timer);
+      clearInterval(poll);
+      resolve(result);
+    }
+
     const observer = new MutationObserver(() => {
       const el = parent.querySelector<T>(selector);
       if (el) {
-        observer.disconnect();
-        clearTimeout(timer);
-        resolve(ok(el));
+        settle(ok(el));
       }
     });
 
     const timer = setTimeout(() => {
-      observer.disconnect();
-      resolve(err(`Timeout waiting for element: ${selector}`));
+      settle(err(`Timeout waiting for element: ${selector}`));
     }, timeoutMs);
 
     observer.observe(parent instanceof Document ? parent.body : parent, {
@@ -53,18 +61,11 @@ export function waitForElement<T extends Element>(
       subtree: true,
     });
 
-    // Also poll in case MutationObserver misses it
     const poll = setInterval(() => {
       const el = parent.querySelector<T>(selector);
       if (el) {
-        clearInterval(poll);
-        observer.disconnect();
-        clearTimeout(timer);
-        resolve(ok(el));
+        settle(ok(el));
       }
     }, POLL_INTERVAL_MS);
-
-    // Clean up poll on timeout too
-    setTimeout(() => clearInterval(poll), timeoutMs);
   });
 }

@@ -23,19 +23,17 @@ function generateJobId(): string {
 function parseTimerText(text: string): number | undefined {
   // Try parsing "HH:MM:SS" or "MM:SS" format
   const parts = text.trim().split(":").map(Number);
+  const allValid = parts.every((n) => !isNaN(n));
+  if (!allValid) return undefined;
 
   if (parts.length === 3) {
-    const [h, m, s] = parts;
-    if (h !== undefined && m !== undefined && s !== undefined && !isNaN(h) && !isNaN(m) && !isNaN(s)) {
-      return (h * 3600 + m * 60 + s) * 1000;
-    }
+    const [h = 0, m = 0, s = 0] = parts;
+    return (h * 3600 + m * 60 + s) * 1000;
   }
 
   if (parts.length === 2) {
-    const [m, s] = parts;
-    if (m !== undefined && s !== undefined && !isNaN(m) && !isNaN(s)) {
-      return (m * 60 + s) * 1000;
-    }
+    const [m = 0, s = 0] = parts;
+    return (m * 60 + s) * 1000;
   }
 
   return undefined;
@@ -47,7 +45,8 @@ function extractJobFromElement(el: Element): IdleJob | undefined {
   const timerEl = el.querySelector(JOB_TIMER_SELECTOR);
 
   const name = nameEl?.textContent?.trim();
-  const skillText = skillEl?.textContent?.trim() ?? el.getAttribute("data-skill");
+  const skillText =
+    skillEl?.textContent?.trim() ?? el.getAttribute("data-skill");
   const timerText = timerEl?.textContent?.trim();
   const endsAtAttr = timerEl?.getAttribute("data-ends-at");
 
@@ -87,19 +86,12 @@ function extractJobFromElement(el: Element): IdleJob | undefined {
 
 export function extractActiveJobs(): Result<readonly IdleJob[], string> {
   const jobElements = queryAll<Element>(JOB_ITEM_SELECTOR);
+  const jobs = jobElements
+    .map(extractJobFromElement)
+    .filter((job): job is IdleJob => job !== undefined);
 
-  if (jobElements.length === 0) {
-    return ok([]);
+  if (jobs.length > 0) {
+    logger.info("Extracted jobs", { count: jobs.length });
   }
-
-  const jobs: IdleJob[] = [];
-  for (const el of jobElements) {
-    const job = extractJobFromElement(el);
-    if (job) {
-      jobs.push(job);
-    }
-  }
-
-  logger.info("Extracted jobs", { count: jobs.length });
   return ok(jobs);
 }

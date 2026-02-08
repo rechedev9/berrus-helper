@@ -1,6 +1,8 @@
 import { SKILLS } from "../types/skills.ts";
 import { ITEM_RARITIES, ITEM_TYPES } from "../types/items.ts";
+import { HISCORE_CATEGORIES } from "../types/hiscores.ts";
 import type { SkillName } from "../types/skills.ts";
+import type { HiscoreCategory } from "../types/hiscores.ts";
 import type { IdleJob } from "../types/jobs.ts";
 import type { PriceSnapshot } from "../types/items.ts";
 import type { SessionEvent, SessionEventType } from "../types/session.ts";
@@ -9,6 +11,7 @@ import type { ExtensionMessage } from "../types/messages.ts";
 const SKILL_SET: ReadonlySet<string> = new Set(SKILLS);
 const RARITY_SET: ReadonlySet<string> = new Set(ITEM_RARITIES);
 const ITEM_TYPE_SET: ReadonlySet<string> = new Set(ITEM_TYPES);
+const HISCORE_CATEGORY_SET: ReadonlySet<string> = new Set(HISCORE_CATEGORIES);
 
 const MESSAGE_TYPES: ReadonlySet<string> = new Set([
   "JOB_DETECTED",
@@ -35,7 +38,7 @@ const SESSION_EVENT_TYPES: ReadonlySet<string> = new Set([
   "job_completed",
 ]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -49,6 +52,10 @@ export function isItemRarity(value: unknown): value is string {
 
 export function isItemType(value: unknown): value is string {
   return typeof value === "string" && ITEM_TYPE_SET.has(value);
+}
+
+export function isHiscoreCategory(value: unknown): value is HiscoreCategory {
+  return typeof value === "string" && HISCORE_CATEGORY_SET.has(value);
 }
 
 export function isSessionEventType(value: unknown): value is SessionEventType {
@@ -89,7 +96,33 @@ export function isSessionEventData(value: unknown): value is SessionEvent {
 
 export function isExtensionMessage(value: unknown): value is ExtensionMessage {
   if (!isRecord(value)) return false;
-  return typeof value["type"] === "string" && MESSAGE_TYPES.has(value["type"]);
+  const type = value["type"];
+  if (typeof type !== "string" || !MESSAGE_TYPES.has(type)) return false;
+
+  switch (type) {
+    case "JOB_DETECTED":
+      return isIdleJobData(value["job"]);
+    case "JOB_COMPLETED":
+      return typeof value["jobId"] === "string";
+    case "PRICE_SNAPSHOT":
+      return isPriceSnapshotData(value["snapshot"]);
+    case "XP_GAINED":
+    case "ITEM_COLLECTED":
+    case "SESSION_EVENT":
+      return isSessionEventData(value["event"]);
+    case "SEARCH_HISCORES":
+      return typeof value["playerName"] === "string";
+    case "GET_PRICES":
+      return (
+        value["itemId"] === undefined || typeof value["itemId"] === "string"
+      );
+    case "GET_TIMERS":
+    case "GET_SESSION_STATS":
+    case "CONTENT_SCRIPT_READY":
+      return true;
+    default:
+      return false;
+  }
 }
 
 export function isInterceptedMessage(

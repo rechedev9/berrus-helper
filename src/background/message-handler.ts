@@ -3,13 +3,18 @@ import type { PriceHistory, PriceSnapshot } from "../types/items.ts";
 import { onMessage } from "../utils/messages.ts";
 import { getStorage, updateStorage } from "../utils/storage.ts";
 import { createJobAlarm } from "../utils/alarms.ts";
-import { addSessionEvent, getSessionStats, startSession } from "./session-manager.ts";
+import {
+  addSessionEvent,
+  getSessionStats,
+  startSession,
+} from "./session-manager.ts";
 import { searchHiscores } from "./hiscore-fetcher.ts";
 import { createLogger } from "../utils/logger.ts";
 
 const logger = createLogger("message-handler");
 
 const MAX_SNAPSHOTS_PER_ITEM = 100;
+const MAX_COMPLETED_JOB_IDS = 500;
 
 function addPriceSnapshot(
   histories: readonly PriceHistory[],
@@ -21,7 +26,9 @@ function addPriceSnapshot(
   if (idx >= 0) {
     const existing = updated[idx];
     if (!existing) return histories;
-    const snapshots = [...existing.snapshots, snapshot].slice(-MAX_SNAPSHOTS_PER_ITEM);
+    const snapshots = [...existing.snapshots, snapshot].slice(
+      -MAX_SNAPSHOTS_PER_ITEM,
+    );
     const prices = snapshots.map((s) => s.price);
     updated[idx] = {
       itemId: existing.itemId,
@@ -77,7 +84,9 @@ export function registerMessageHandlers(): void {
           const state = current ?? { activeJobs: [], completedJobIds: [] };
           return {
             activeJobs: state.activeJobs.filter((j) => j.id !== message.jobId),
-            completedJobIds: [...state.completedJobIds, message.jobId],
+            completedJobIds: [...state.completedJobIds, message.jobId].slice(
+              -MAX_COMPLETED_JOB_IDS,
+            ),
           };
         },
       );
@@ -88,7 +97,9 @@ export function registerMessageHandlers(): void {
       logger.info("Price snapshot", { snapshot: message.snapshot });
       const result = await updateStorage(
         "priceHistories",
-        (current: readonly PriceHistory[] | undefined): readonly PriceHistory[] =>
+        (
+          current: readonly PriceHistory[] | undefined,
+        ): readonly PriceHistory[] =>
           addPriceSnapshot(current ?? [], message.snapshot),
       );
       return { success: result.ok };

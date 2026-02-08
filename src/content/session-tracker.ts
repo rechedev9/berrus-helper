@@ -6,8 +6,10 @@ const logger = createLogger("session-tracker");
 
 // Placeholder selectors for detecting in-game events via DOM changes
 const XP_NOTIFICATION_SELECTOR = ".xp-gain, .xp-notification, [data-xp-gain]";
-const ITEM_PICKUP_SELECTOR = ".item-pickup, .loot-notification, [data-item-pickup]";
-const COMBAT_RESULT_SELECTOR = ".combat-result, .battle-result, [data-combat-result]";
+const ITEM_PICKUP_SELECTOR =
+  ".item-pickup, .loot-notification, [data-item-pickup]";
+const COMBAT_RESULT_SELECTOR =
+  ".combat-result, .battle-result, [data-combat-result]";
 
 function parseXpGainFromDom(el: Element): SessionEvent | undefined {
   const text = el.textContent?.trim();
@@ -45,7 +47,10 @@ function parseCombatResultFromDom(el: Element): SessionEvent | undefined {
   const text = el.textContent?.trim()?.toLowerCase();
   if (!text) return undefined;
 
-  const isWin = text.includes("victory") || text.includes("win") || text.includes("defeated");
+  const isWin =
+    text.includes("victory") ||
+    text.includes("win") ||
+    text.includes("defeated");
   return {
     type: isWin ? "combat_kill" : "combat_death",
     timestamp: Date.now(),
@@ -53,48 +58,51 @@ function parseCombatResultFromDom(el: Element): SessionEvent | undefined {
   };
 }
 
+function matchSelfAndChildren(
+  node: Element,
+  selector: string,
+): readonly Element[] {
+  return [
+    ...(node.matches(selector) ? [node] : []),
+    ...node.querySelectorAll(selector),
+  ];
+}
+
+function emitParsedEvents(
+  elements: readonly Element[],
+  parser: (el: Element) => SessionEvent | undefined,
+  messageType: "XP_GAINED" | "ITEM_COLLECTED" | "SESSION_EVENT",
+  errorLabel: string,
+): void {
+  for (const el of elements) {
+    const event = parser(el);
+    if (event) {
+      sendMessage({ type: messageType, event }).catch((e: unknown) => {
+        logger.error(errorLabel, e);
+      });
+    }
+  }
+}
+
 export function processAddedNode(node: Node): void {
   if (!(node instanceof Element)) return;
 
-  const xpEls = [
-    ...(node.matches(XP_NOTIFICATION_SELECTOR) ? [node] : []),
-    ...Array.from(node.querySelectorAll(XP_NOTIFICATION_SELECTOR)),
-  ];
-
-  for (const el of xpEls) {
-    const event = parseXpGainFromDom(el);
-    if (event) {
-      sendMessage({ type: "XP_GAINED", event }).catch((e: unknown) => {
-        logger.error("Failed to send XP event", e);
-      });
-    }
-  }
-
-  const itemEls = [
-    ...(node.matches(ITEM_PICKUP_SELECTOR) ? [node] : []),
-    ...Array.from(node.querySelectorAll(ITEM_PICKUP_SELECTOR)),
-  ];
-
-  for (const el of itemEls) {
-    const event = parseItemPickupFromDom(el);
-    if (event) {
-      sendMessage({ type: "ITEM_COLLECTED", event }).catch((e: unknown) => {
-        logger.error("Failed to send item event", e);
-      });
-    }
-  }
-
-  const combatEls = [
-    ...(node.matches(COMBAT_RESULT_SELECTOR) ? [node] : []),
-    ...Array.from(node.querySelectorAll(COMBAT_RESULT_SELECTOR)),
-  ];
-
-  for (const el of combatEls) {
-    const event = parseCombatResultFromDom(el);
-    if (event) {
-      sendMessage({ type: "SESSION_EVENT", event }).catch((e: unknown) => {
-        logger.error("Failed to send combat event", e);
-      });
-    }
-  }
+  emitParsedEvents(
+    matchSelfAndChildren(node, XP_NOTIFICATION_SELECTOR),
+    parseXpGainFromDom,
+    "XP_GAINED",
+    "Failed to send XP event",
+  );
+  emitParsedEvents(
+    matchSelfAndChildren(node, ITEM_PICKUP_SELECTOR),
+    parseItemPickupFromDom,
+    "ITEM_COLLECTED",
+    "Failed to send item event",
+  );
+  emitParsedEvents(
+    matchSelfAndChildren(node, COMBAT_RESULT_SELECTOR),
+    parseCombatResultFromDom,
+    "SESSION_EVENT",
+    "Failed to send combat event",
+  );
 }

@@ -1,6 +1,7 @@
-import type { HiscoreCategory, HiscoreEntry } from "../types/hiscores.ts";
+import type { HiscoreEntry } from "../types/hiscores.ts";
 import { SKILLS } from "../types/skills.ts";
 import { sendMessage } from "../utils/messages.ts";
+import { isHiscoreCategory } from "../utils/type-guards.ts";
 import { el, clearChildren } from "./dom-builder.ts";
 
 function createCategoryOptions(): readonly HTMLElement[] {
@@ -10,7 +11,9 @@ function createCategoryOptions(): readonly HTMLElement[] {
   ];
 
   for (const skill of SKILLS) {
-    options.push(el("option", { textContent: skill, attributes: { value: skill } }));
+    options.push(
+      el("option", { textContent: skill, attributes: { value: skill } }),
+    );
   }
 
   return options;
@@ -57,7 +60,7 @@ export function renderHiscoresPanel(panel: HTMLElement): void {
 
   const categorySelect = el("select", {
     className: "search-select",
-    children: createCategoryOptions() as HTMLElement[],
+    children: createCategoryOptions(),
   });
 
   const nameInput = el("input", {
@@ -72,10 +75,11 @@ export function renderHiscoresPanel(panel: HTMLElement): void {
     className: "search-btn",
     textContent: "Search",
     onclick: async () => {
-      const playerName = (nameInput as HTMLInputElement).value.trim();
+      const playerName = nameInput.value.trim();
       if (!playerName) return;
 
-      const category = (categorySelect as HTMLSelectElement).value as HiscoreCategory;
+      const category = categorySelect.value;
+      if (!isHiscoreCategory(category)) return;
 
       clearChildren(resultsContainer);
       resultsContainer.appendChild(
@@ -98,7 +102,10 @@ export function renderHiscoresPanel(panel: HTMLElement): void {
           el("div", {
             className: "empty-state",
             children: [
-              el("div", { className: "empty-state__text", textContent: "Search failed. Try again." }),
+              el("div", {
+                className: "empty-state__text",
+                textContent: "Search failed. Try again.",
+              }),
             ],
           }),
         );
@@ -110,7 +117,10 @@ export function renderHiscoresPanel(panel: HTMLElement): void {
           el("div", {
             className: "empty-state",
             children: [
-              el("div", { className: "empty-state__text", textContent: "No results found" }),
+              el("div", {
+                className: "empty-state__text",
+                textContent: "No results found",
+              }),
             ],
           }),
         );
@@ -122,8 +132,8 @@ export function renderHiscoresPanel(panel: HTMLElement): void {
   });
 
   // Handle enter key
-  nameInput.addEventListener("keydown", (e: Event) => {
-    if ((e as KeyboardEvent).key === "Enter") {
+  nameInput.addEventListener("keydown", (e: KeyboardEvent) => {
+    if (e.key === "Enter") {
       searchBtn.click();
     }
   });
@@ -142,7 +152,10 @@ export function renderHiscoresPanel(panel: HTMLElement): void {
     el("div", {
       className: "empty-state",
       children: [
-        el("div", { className: "empty-state__text", textContent: "Search for a player" }),
+        el("div", {
+          className: "empty-state__text",
+          textContent: "Search for a player",
+        }),
       ],
     }),
   );

@@ -42,7 +42,7 @@ function handleMutations(mutations: readonly MutationRecord[]): void {
   let hasNewNodes = false;
 
   for (const mutation of mutations) {
-    for (const node of Array.from(mutation.addedNodes)) {
+    for (const node of mutation.addedNodes) {
       hasNewNodes = true;
       processAddedNode(node);
     }

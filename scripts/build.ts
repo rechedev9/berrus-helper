@@ -8,9 +8,7 @@ const IS_WATCH = process.argv.includes("--watch");
 const IS_PROD = process.argv.includes("--prod");
 
 function ensureDir(dir: string): void {
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
+  mkdirSync(dir, { recursive: true });
 }
 
 function copyStaticAssets(): void {
@@ -63,6 +61,11 @@ async function build(): Promise<void> {
       ...sharedConfig,
       entrypoints: [join(ROOT, "src", "popup", "index.ts")],
       naming: "popup.js",
+    }),
+    Bun.build({
+      ...sharedConfig,
+      entrypoints: [join(ROOT, "src", "content", "interceptor.ts")],
+      naming: "interceptor.js",
     }),
   ]);
 

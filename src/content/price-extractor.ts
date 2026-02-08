@@ -7,7 +7,8 @@ import { createLogger } from "../utils/logger.ts";
 const logger = createLogger("price-extractor");
 
 // Placeholder selectors — must be refined by inspecting berrus.app DOM
-const SHOP_ITEM_SELECTOR = '[data-testid="shop-item"], .shop-item, .market-item';
+const SHOP_ITEM_SELECTOR =
+  '[data-testid="shop-item"], .shop-item, .market-item';
 const ITEM_NAME_SELECTOR = ".item-name, [data-item-name]";
 const ITEM_PRICE_SELECTOR = ".item-price, [data-price]";
 const MERCADILLO_CONTAINER_SELECTOR = ".mercadillo, .market, .trading-post";
@@ -28,14 +29,17 @@ function extractPriceFromElement(el: Element): PriceSnapshot | undefined {
   const priceEl = el.querySelector(ITEM_PRICE_SELECTOR);
 
   const itemName = nameEl?.textContent?.trim();
-  const priceText = priceEl?.textContent?.trim() ?? el.getAttribute("data-price");
+  const priceText =
+    priceEl?.textContent?.trim() ?? el.getAttribute("data-price");
 
   if (!itemName || !priceText) return undefined;
 
   const price = parsePriceText(priceText);
   if (price === undefined) return undefined;
 
-  const itemId = el.getAttribute("data-item-id") ?? itemName.toLowerCase().replace(/\s+/g, "-");
+  const itemId =
+    el.getAttribute("data-item-id") ??
+    itemName.toLowerCase().replace(/\s+/g, "-");
 
   return {
     itemId,
@@ -48,19 +52,12 @@ function extractPriceFromElement(el: Element): PriceSnapshot | undefined {
 
 export function extractPrices(): Result<readonly PriceSnapshot[], string> {
   const itemElements = queryAll<Element>(SHOP_ITEM_SELECTOR);
+  const snapshots = itemElements
+    .map(extractPriceFromElement)
+    .filter((s): s is PriceSnapshot => s !== undefined);
 
-  if (itemElements.length === 0) {
-    return ok([]);
+  if (snapshots.length > 0) {
+    logger.info("Extracted prices", { count: snapshots.length });
   }
-
-  const snapshots: PriceSnapshot[] = [];
-  for (const el of itemElements) {
-    const snapshot = extractPriceFromElement(el);
-    if (snapshot) {
-      snapshots.push(snapshot);
-    }
-  }
-
-  logger.info("Extracted prices", { count: snapshots.length });
   return ok(snapshots);
 }

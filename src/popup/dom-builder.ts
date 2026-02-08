@@ -44,7 +44,5 @@ export function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 export function clearChildren(parent: Element): void {
-  while (parent.firstChild) {
-    parent.removeChild(parent.firstChild);
-  }
+  parent.replaceChildren();
 }

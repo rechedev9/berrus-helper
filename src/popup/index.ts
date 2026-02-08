@@ -2,10 +2,18 @@ import { renderTimersPanel, stopTimerUpdates } from "./timers-panel.ts";
 import { renderPricesPanel } from "./prices-panel.ts";
 import { renderHiscoresPanel } from "./hiscores-panel.ts";
 import { renderSessionPanel } from "./session-panel.ts";
+import { createLogger } from "../utils/logger.ts";
+
+const logger = createLogger("popup");
 
 type TabName = "timers" | "prices" | "hiscores" | "session";
 
-const TAB_NAMES: readonly TabName[] = ["timers", "prices", "hiscores", "session"] as const;
+const TAB_NAMES: readonly TabName[] = [
+  "timers",
+  "prices",
+  "hiscores",
+  "session",
+] as const;
 
 function getPanel(name: TabName): HTMLElement | null {
   return document.getElementById(`panel-${name}`);
@@ -19,26 +27,14 @@ async function activateTab(name: TabName): Promise<void> {
   // Update tab buttons
   const buttons = document.querySelectorAll<HTMLElement>(".tabs__btn");
   for (const btn of buttons) {
-    const tabName = btn.getAttribute("data-tab");
-    if (tabName === name) {
-      btn.classList.add("tabs__btn--active");
-      btn.setAttribute("aria-selected", "true");
-    } else {
-      btn.classList.remove("tabs__btn--active");
-      btn.setAttribute("aria-selected", "false");
-    }
+    const isActive = btn.getAttribute("data-tab") === name;
+    btn.classList.toggle("tabs__btn--active", isActive);
+    btn.setAttribute("aria-selected", String(isActive));
   }
 
   // Update panels
   for (const tab of TAB_NAMES) {
-    const panel = getPanel(tab);
-    if (!panel) continue;
-
-    if (tab === name) {
-      panel.classList.add("panel--active");
-    } else {
-      panel.classList.remove("panel--active");
-    }
+    getPanel(tab)?.classList.toggle("panel--active", tab === name);
   }
 
   // Stop timer updates when switching away
@@ -73,7 +69,7 @@ function initTabs(): void {
       const tabName = btn.getAttribute("data-tab");
       if (tabName && isTabName(tabName)) {
         activateTab(tabName).catch((e: unknown) => {
-          console.error("Tab activation failed", e);
+          logger.error("Tab activation failed", e);
         });
       }
     });
@@ -88,26 +84,28 @@ async function init(): Promise<void> {
 
   // Update connection status
   const statusEl = document.getElementById("connection-status");
-  if (statusEl) {
-    try {
-      const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-      const activeTab = tabs[0];
-      const isOnBerrus = activeTab?.url?.includes("berrus.app");
+  if (!statusEl) return;
 
-      if (isOnBerrus) {
-        statusEl.textContent = "Connected to Berrus";
-        statusEl.classList.add("footer__status--connected");
-      } else {
-        statusEl.textContent = "Not on berrus.app";
-      }
-    } catch {
-      statusEl.textContent = "Disconnected";
+  try {
+    const tabs = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
+    });
+    const isOnBerrus = tabs[0]?.url?.includes("berrus.app");
+
+    if (isOnBerrus) {
+      statusEl.textContent = "Connected to Berrus";
+      statusEl.classList.add("footer__status--connected");
+    } else {
+      statusEl.textContent = "Not on berrus.app";
     }
+  } catch {
+    statusEl.textContent = "Disconnected";
   }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
   init().catch((e: unknown) => {
-    console.error("Popup init failed", e);
+    logger.error("Popup init failed", e);
   });
 });
