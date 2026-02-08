@@ -51,13 +51,37 @@ function extractPriceFromElement(el: Element): PriceSnapshot | undefined {
 }
 
 export function extractPrices(): Result<readonly PriceSnapshot[], string> {
+  logger.info("Attempting price extraction", { selector: SHOP_ITEM_SELECTOR });
+
   const itemElements = queryAll<Element>(SHOP_ITEM_SELECTOR);
+  logger.info("Price elements found", { count: itemElements.length });
+
+  if (itemElements.length === 0) {
+    logger.warn("No shop item elements matched selector", {
+      selector: SHOP_ITEM_SELECTOR,
+      hint: "DOM may not contain shop/market elements or selectors need updating",
+    });
+  }
+
   const snapshots = itemElements
     .map(extractPriceFromElement)
     .filter((s): s is PriceSnapshot => s !== undefined);
 
-  if (snapshots.length > 0) {
-    logger.info("Extracted prices", { count: snapshots.length });
+  const failedCount = itemElements.length - snapshots.length;
+  if (failedCount > 0) {
+    logger.warn("Some price elements failed extraction", {
+      total: itemElements.length,
+      extracted: snapshots.length,
+      failed: failedCount,
+    });
   }
+
+  if (snapshots.length > 0) {
+    logger.info("Successfully extracted prices", {
+      count: snapshots.length,
+      items: snapshots.map((s) => ({ item: s.itemName, price: s.price })),
+    });
+  }
+
   return ok(snapshots);
 }

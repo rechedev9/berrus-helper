@@ -3,6 +3,11 @@ import { extractPrices } from "./price-extractor.ts";
 import { processAddedNode } from "./session-tracker.ts";
 import { sendMessage } from "../utils/messages.ts";
 import { createLogger } from "../utils/logger.ts";
+import {
+  detectSelectors,
+  suggestJobSelectors,
+  suggestPriceSelectors,
+} from "../utils/selector-detective.ts";
 
 const logger = createLogger("dom-observer");
 
@@ -94,4 +99,23 @@ export function startObserver(): MutationObserver {
   processPriceChanges();
 
   return observer;
+}
+
+/**
+ * Debug helper: Run selector detection to identify potential selectors.
+ * Call this from browser console: `window.__debugSelectors()`
+ */
+export function runSelectorDetection(): void {
+  logger.info("=== SELECTOR DETECTION STARTED ===");
+
+  logger.info("--- Checking job selectors ---");
+  detectSelectors(suggestJobSelectors(), { includeSampleHtml: true });
+
+  logger.info("--- Checking price selectors ---");
+  detectSelectors(suggestPriceSelectors(), { includeSampleHtml: true });
+
+  logger.info("=== SELECTOR DETECTION COMPLETE ===");
+  logger.info(
+    "Check console logs above to see which selectors matched elements",
+  );
 }

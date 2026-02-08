@@ -85,13 +85,37 @@ function extractJobFromElement(el: Element): IdleJob | undefined {
 }
 
 export function extractActiveJobs(): Result<readonly IdleJob[], string> {
+  logger.info("Attempting job extraction", { selector: JOB_ITEM_SELECTOR });
+
   const jobElements = queryAll<Element>(JOB_ITEM_SELECTOR);
+  logger.info("Job elements found", { count: jobElements.length });
+
+  if (jobElements.length === 0) {
+    logger.warn("No job elements matched selector", {
+      selector: JOB_ITEM_SELECTOR,
+      hint: "DOM may not contain expected structure or selectors need updating",
+    });
+  }
+
   const jobs = jobElements
     .map(extractJobFromElement)
     .filter((job): job is IdleJob => job !== undefined);
 
-  if (jobs.length > 0) {
-    logger.info("Extracted jobs", { count: jobs.length });
+  const failedCount = jobElements.length - jobs.length;
+  if (failedCount > 0) {
+    logger.warn("Some job elements failed extraction", {
+      total: jobElements.length,
+      extracted: jobs.length,
+      failed: failedCount,
+    });
   }
+
+  if (jobs.length > 0) {
+    logger.info("Successfully extracted jobs", {
+      count: jobs.length,
+      jobs: jobs.map((j) => ({ id: j.id, skill: j.skill, name: j.name })),
+    });
+  }
+
   return ok(jobs);
 }

@@ -41,6 +41,11 @@ function renderEmpty(): HTMLElement {
         className: "empty-state__text",
         textContent: "Start an idle job in Berrus to see timers here.",
       }),
+      el("p", {
+        className: "empty-state__text",
+        textContent:
+          "💡 Debug tip: Open DevTools console and look for [job-extractor] or [network-handler] logs. Run window.__berrusDebug.detectSelectors() to test DOM selectors.",
+      }),
     ],
   });
 }

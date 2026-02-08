@@ -1,6 +1,10 @@
 import { onInterceptedResponse } from "../utils/network-interceptor.ts";
 import { handleInterceptedResponse } from "./network-handler.ts";
-import { startObserver, stopObserver } from "./dom-observer.ts";
+import {
+  startObserver,
+  stopObserver,
+  runSelectorDetection,
+} from "./dom-observer.ts";
 import { sendMessage } from "../utils/messages.ts";
 import { createLogger } from "../utils/logger.ts";
 
@@ -29,6 +33,12 @@ function init(): void {
   });
 
   logger.info("Berrus Helper content script initialized");
+
+  // Expose debug helper on window for manual testing
+  // Usage: window.__berrusDebug.detectSelectors()
+  (window as unknown as Record<string, unknown>)["__berrusDebug"] = {
+    detectSelectors: runSelectorDetection,
+  };
 }
 
 init();

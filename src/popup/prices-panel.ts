@@ -102,6 +102,11 @@ function renderEmpty(): HTMLElement {
         className: "empty-state__text",
         textContent: "Visit a shop or mercadillo in Berrus to start tracking prices.",
       }),
+      el("p", {
+        className: "empty-state__text",
+        textContent:
+          "💡 Debug tip: Open DevTools console and look for [price-extractor] logs. Run window.__berrusDebug.detectSelectors() to test DOM selectors.",
+      }),
     ],
   });
 }
