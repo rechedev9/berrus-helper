@@ -1,108 +1,97 @@
 import type { SessionEvent } from "../types/session.ts";
 import { sendMessage } from "../utils/messages.ts";
+import { apiSkillToSkillName } from "../utils/skill-mapping.ts";
 import { createLogger } from "../utils/logger.ts";
 
 const logger = createLogger("session-tracker");
 
-// Placeholder selectors for detecting in-game events via DOM changes
-const XP_NOTIFICATION_SELECTOR = ".xp-gain, .xp-notification, [data-xp-gain]";
-const ITEM_PICKUP_SELECTOR =
-  ".item-pickup, .loot-notification, [data-item-pickup]";
-const COMBAT_RESULT_SELECTOR =
-  ".combat-result, .battle-result, [data-combat-result]";
+const XP_PATTERN = /\+?([\d,]+)\s*(?:xp|exp)/i;
+const ITEM_RECEIVED_PATTERN = /received\s+(.+)/i;
+const ITEM_COLLECTED_PATTERN = /collected\s+(.+)/i;
+const COMBAT_WIN_PATTERN = /victory|defeated/i;
+const COMBAT_LOSS_PATTERN = /death|died/i;
+const SKILL_LINK_HREF = /\/character\/skills\/([a-z]+)/i;
 
-function parseXpGainFromDom(el: Element): SessionEvent | undefined {
-  const text = el.textContent?.trim();
-  if (!text) return undefined;
+const MAX_NOTIFICATION_LENGTH = 150;
 
-  // Try to parse "+123 XP (Mineria)" pattern
-  const match = /\+?([\d,]+)\s*(?:xp|exp)/i.exec(text);
-  if (!match?.[1]) return undefined;
+function tryExtractSkillFromLinks(el: Element): string {
+  const link = el.querySelector('a[href*="/character/skills/"]');
+  if (link) {
+    const href = link.getAttribute("href") ?? "";
+    const match = SKILL_LINK_HREF.exec(href);
+    if (match?.[1]) {
+      const mapped = apiSkillToSkillName(match[1]);
+      if (mapped) return mapped;
+    }
+  }
+
+  // Fallback: parenthesized skill name e.g. "+5 XP (Mineria)"
+  const text = el.textContent ?? "";
+  const parenMatch = /\((\w+)\)/i.exec(text);
+  return parenMatch?.[1] ?? "unknown";
+}
+
+function tryEmitXpEvent(el: Element, text: string): void {
+  const match = XP_PATTERN.exec(text);
+  if (!match?.[1]) return;
 
   const xp = parseInt(match[1].replace(/,/g, ""), 10);
-  if (isNaN(xp)) return undefined;
+  if (isNaN(xp)) return;
 
-  const skillMatch = /\((\w+)\)/i.exec(text);
-  const skill = skillMatch?.[1] ?? "unknown";
+  const skill = tryExtractSkillFromLinks(el);
 
-  return {
+  const event: SessionEvent = {
     type: "xp_gained",
     timestamp: Date.now(),
     data: { xp, skill },
   };
+
+  sendMessage({ type: "XP_GAINED", event }).catch((e: unknown) => {
+    logger.error("Failed to send XP event", e);
+  });
 }
 
-function parseItemPickupFromDom(el: Element): SessionEvent | undefined {
-  const itemName = el.textContent?.trim() ?? el.getAttribute("data-item-name");
-  if (!itemName) return undefined;
+function tryEmitItemEvent(_el: Element, text: string): void {
+  const receivedMatch = ITEM_RECEIVED_PATTERN.exec(text);
+  const collectedMatch = ITEM_COLLECTED_PATTERN.exec(text);
+  const itemName = receivedMatch?.[1]?.trim() ?? collectedMatch?.[1]?.trim();
+  if (!itemName) return;
 
-  return {
+  const event: SessionEvent = {
     type: "item_collected",
     timestamp: Date.now(),
     data: { itemName },
   };
+
+  sendMessage({ type: "ITEM_COLLECTED", event }).catch((e: unknown) => {
+    logger.error("Failed to send item event", e);
+  });
 }
 
-function parseCombatResultFromDom(el: Element): SessionEvent | undefined {
-  const text = el.textContent?.trim()?.toLowerCase();
-  if (!text) return undefined;
+function tryEmitCombatEvent(_el: Element, text: string): void {
+  const lowerText = text.toLowerCase();
+  const isWin = COMBAT_WIN_PATTERN.test(lowerText);
+  const isLoss = COMBAT_LOSS_PATTERN.test(lowerText);
+  if (!isWin && !isLoss) return;
 
-  const isWin =
-    text.includes("victory") ||
-    text.includes("win") ||
-    text.includes("defeated");
-  return {
+  const event: SessionEvent = {
     type: isWin ? "combat_kill" : "combat_death",
     timestamp: Date.now(),
-    data: { result: text },
+    data: { result: lowerText },
   };
-}
 
-function matchSelfAndChildren(
-  node: Element,
-  selector: string,
-): readonly Element[] {
-  return [
-    ...(node.matches(selector) ? [node] : []),
-    ...node.querySelectorAll(selector),
-  ];
-}
-
-function emitParsedEvents(
-  elements: readonly Element[],
-  parser: (el: Element) => SessionEvent | undefined,
-  messageType: "XP_GAINED" | "ITEM_COLLECTED" | "SESSION_EVENT",
-  errorLabel: string,
-): void {
-  for (const el of elements) {
-    const event = parser(el);
-    if (event) {
-      sendMessage({ type: messageType, event }).catch((e: unknown) => {
-        logger.error(errorLabel, e);
-      });
-    }
-  }
+  sendMessage({ type: "SESSION_EVENT", event }).catch((e: unknown) => {
+    logger.error("Failed to send combat event", e);
+  });
 }
 
 export function processAddedNode(node: Node): void {
   if (!(node instanceof Element)) return;
 
-  emitParsedEvents(
-    matchSelfAndChildren(node, XP_NOTIFICATION_SELECTOR),
-    parseXpGainFromDom,
-    "XP_GAINED",
-    "Failed to send XP event",
-  );
-  emitParsedEvents(
-    matchSelfAndChildren(node, ITEM_PICKUP_SELECTOR),
-    parseItemPickupFromDom,
-    "ITEM_COLLECTED",
-    "Failed to send item event",
-  );
-  emitParsedEvents(
-    matchSelfAndChildren(node, COMBAT_RESULT_SELECTOR),
-    parseCombatResultFromDom,
-    "SESSION_EVENT",
-    "Failed to send combat event",
-  );
+  const text = node.textContent?.trim() ?? "";
+  if (text.length === 0 || text.length > MAX_NOTIFICATION_LENGTH) return;
+
+  tryEmitXpEvent(node, text);
+  tryEmitItemEvent(node, text);
+  tryEmitCombatEvent(node, text);
 }

@@ -5,6 +5,7 @@ import { sendMessage } from "../utils/messages.ts";
 import { createLogger } from "../utils/logger.ts";
 import {
   detectSelectors,
+  detectTextPatterns,
   suggestJobSelectors,
   suggestPriceSelectors,
 } from "../utils/selector-detective.ts";
@@ -114,8 +115,11 @@ export function runSelectorDetection(): void {
   logger.info("--- Checking price selectors ---");
   detectSelectors(suggestPriceSelectors(), { includeSampleHtml: true });
 
+  logger.info("--- Checking content-based text patterns ---");
+  detectTextPatterns();
+
   logger.info("=== SELECTOR DETECTION COMPLETE ===");
   logger.info(
-    "Check console logs above to see which selectors matched elements",
+    "Check console logs above to see which selectors and patterns matched elements",
   );
 }

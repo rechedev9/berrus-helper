@@ -1,17 +1,19 @@
 import type { IdleJob } from "../types/jobs.ts";
+import type { SkillName } from "../types/skills.ts";
 import type { Result } from "../types/result.ts";
 import { ok } from "../types/result.ts";
-import { queryAll } from "../utils/dom.ts";
-import { isSkillName } from "../utils/type-guards.ts";
+import { findElementsByText, findAncestor } from "../utils/dom-walker.ts";
+import { apiSkillToSkillName } from "../utils/skill-mapping.ts";
 import { createLogger } from "../utils/logger.ts";
 
 const logger = createLogger("job-extractor");
 
-// Placeholder selectors — must be refined by inspecting berrus.app DOM
-const JOB_ITEM_SELECTOR = '[data-testid="idle-job"], .idle-job, .job-item';
-const JOB_NAME_SELECTOR = ".job-name, .job-title, [data-job-name]";
-const JOB_SKILL_SELECTOR = ".job-skill, [data-skill]";
-const JOB_TIMER_SELECTOR = ".job-timer, .countdown, [data-ends-at]";
+const TIMER_PATTERN = /(\d+:)?\d+:\d{2}(?:\s*remaining)?/;
+const PROGRESS_PATTERN = /^\d{1,3}%$/;
+const CANCEL_BUTTON_TEXT = /^cancel$/i;
+const SKILL_LINK_HREF = /\/character\/skills\/([a-z]+)/i;
+
+const DEFAULT_SKILL = "Mineria" as const;
 
 let jobCounter = 0;
 
@@ -20,9 +22,9 @@ function generateJobId(): string {
   return `job-${Date.now()}-${String(jobCounter)}`;
 }
 
-function parseTimerText(text: string): number | undefined {
-  // Try parsing "HH:MM:SS" or "MM:SS" format
-  const parts = text.trim().split(":").map(Number);
+export function parseTimerText(text: string): number | undefined {
+  const cleaned = text.replace(/\s*remaining\s*/i, "").trim();
+  const parts = cleaned.split(":").map(Number);
   const allValid = parts.every((n) => !isNaN(n));
   if (!allValid) return undefined;
 
@@ -39,81 +41,151 @@ function parseTimerText(text: string): number | undefined {
   return undefined;
 }
 
-function extractJobFromElement(el: Element): IdleJob | undefined {
-  const nameEl = el.querySelector(JOB_NAME_SELECTOR);
-  const skillEl = el.querySelector(JOB_SKILL_SELECTOR);
-  const timerEl = el.querySelector(JOB_TIMER_SELECTOR);
+function isSkipText(text: string): boolean {
+  return (
+    TIMER_PATTERN.test(text) ||
+    PROGRESS_PATTERN.test(text) ||
+    CANCEL_BUTTON_TEXT.test(text) ||
+    text.length === 0
+  );
+}
 
-  const name = nameEl?.textContent?.trim();
-  const skillText =
-    skillEl?.textContent?.trim() ?? el.getAttribute("data-skill");
-  const timerText = timerEl?.textContent?.trim();
-  const endsAtAttr = timerEl?.getAttribute("data-ends-at");
+/**
+ * A valid job container has multiple distinct text children:
+ * at minimum a name and a timer.
+ */
+function isJobContainer(el: Element): boolean {
+  const children = el.children;
+  if (children.length < 2) return false;
 
+  let hasTimer = false;
+  let hasNonTimer = false;
+
+  for (const child of children) {
+    const text = child.textContent?.trim() ?? "";
+    if (TIMER_PATTERN.test(text)) {
+      hasTimer = true;
+    } else if (!isSkipText(text) && text.length > 0) {
+      hasNonTimer = true;
+    }
+  }
+
+  return hasTimer && hasNonTimer;
+}
+
+function extractJobName(container: Element): string | undefined {
+  for (const child of container.children) {
+    const text = child.textContent?.trim() ?? "";
+    if (text.length > 0 && !isSkipText(text)) {
+      return text;
+    }
+  }
+
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const text = node.textContent?.trim() ?? "";
+    if (text.length > 0 && !isSkipText(text)) {
+      return text;
+    }
+    node = walker.nextNode();
+  }
+
+  return undefined;
+}
+
+function extractTimerText(container: Element): string | undefined {
+  for (const child of container.children) {
+    const text = child.textContent?.trim() ?? "";
+    if (TIMER_PATTERN.test(text)) {
+      return text;
+    }
+  }
+
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  while (node) {
+    const text = node.textContent?.trim() ?? "";
+    if (TIMER_PATTERN.test(text)) {
+      return text;
+    }
+    node = walker.nextNode();
+  }
+
+  return undefined;
+}
+
+function extractSkill(container: Element): SkillName {
+  const link = container.querySelector('a[href*="/character/skills/"]');
+  if (link) {
+    const href = link.getAttribute("href") ?? "";
+    const match = SKILL_LINK_HREF.exec(href);
+    if (match?.[1]) {
+      const mapped = apiSkillToSkillName(match[1]);
+      if (mapped) return mapped;
+    }
+  }
+  return DEFAULT_SKILL;
+}
+
+function extractJobFromContainer(container: Element): IdleJob | undefined {
+  const name = extractJobName(container);
   if (!name) return undefined;
 
-  const skill = skillText && isSkillName(skillText) ? skillText : undefined;
-  if (!skill) {
-    logger.warn("Could not determine skill for job", { name, skillText });
-    return undefined;
-  }
+  const timerText = extractTimerText(container);
+  if (!timerText) return undefined;
 
+  const durationMs = parseTimerText(timerText);
+  if (durationMs === undefined) return undefined;
+
+  const skill = extractSkill(container);
   const now = Date.now();
-  let endsAt: number;
-  let durationMs: number;
-
-  if (endsAtAttr) {
-    endsAt = parseInt(endsAtAttr, 10);
-    durationMs = endsAt - now;
-  } else if (timerText) {
-    const remaining = parseTimerText(timerText);
-    if (!remaining) return undefined;
-    durationMs = remaining;
-    endsAt = now + remaining;
-  } else {
-    return undefined;
-  }
 
   return {
-    id: el.getAttribute("data-job-id") ?? generateJobId(),
+    id: generateJobId(),
     skill,
     name,
     startedAt: now,
     durationMs,
-    endsAt,
+    endsAt: now + durationMs,
   };
 }
 
 export function extractActiveJobs(): Result<readonly IdleJob[], string> {
-  logger.info("Attempting job extraction", { selector: JOB_ITEM_SELECTOR });
+  logger.info("Attempting job extraction via content-based scanning");
 
-  const jobElements = queryAll<Element>(JOB_ITEM_SELECTOR);
-  logger.info("Job elements found", { count: jobElements.length });
+  const timerElements = findElementsByText(TIMER_PATTERN);
+  logger.info("Timer elements found", { count: timerElements.length });
 
-  if (jobElements.length === 0) {
-    logger.warn("No job elements matched selector", {
-      selector: JOB_ITEM_SELECTOR,
-      hint: "DOM may not contain expected structure or selectors need updating",
+  if (timerElements.length === 0) {
+    logger.warn("No timer elements found on page", {
+      hint: "Page may not contain queued jobs or DOM structure changed",
     });
+    return ok([]);
   }
 
-  const jobs = jobElements
-    .map(extractJobFromElement)
-    .filter((job): job is IdleJob => job !== undefined);
+  const seenContainers = new Set<Element>();
+  const jobs: IdleJob[] = [];
 
-  const failedCount = jobElements.length - jobs.length;
-  if (failedCount > 0) {
-    logger.warn("Some job elements failed extraction", {
-      total: jobElements.length,
-      extracted: jobs.length,
-      failed: failedCount,
-    });
+  for (const timerEl of timerElements) {
+    const container = findAncestor(timerEl, isJobContainer);
+    if (!container || seenContainers.has(container)) continue;
+    seenContainers.add(container);
+
+    const job = extractJobFromContainer(container);
+    if (job) {
+      jobs.push(job);
+    }
   }
 
   if (jobs.length > 0) {
     logger.info("Successfully extracted jobs", {
       count: jobs.length,
       jobs: jobs.map((j) => ({ id: j.id, skill: j.skill, name: j.name })),
+    });
+  } else {
+    logger.warn("Timer elements found but no jobs could be extracted", {
+      timerCount: timerElements.length,
     });
   }
 
