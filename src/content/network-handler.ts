@@ -9,7 +9,7 @@ import { apiSkillToSkillName } from "../utils/skill-mapping.ts";
 const logger = createLogger("network-handler");
 
 const API_PATTERNS = {
-  character: /\/api\/protected\/character\/[^/]+$/,
+  character: /\/api\/protected\/character\/(?!all\b)[^/]+(\?.*)?$/,
   rewards: /\/api\/protected\/character\/.*\/protected\/rewards/,
   jobs: /\/api\/protected\/character\/.*\/protected\/jobs/,
 } as const;
@@ -64,6 +64,7 @@ function handleCharacterJobs(data: Record<string, unknown>): void {
       endsAt: startedAt + durationMs,
     };
 
+    logger.info(`Job detected: ${jobId} (skill: ${skill ?? "unknown"})`);
     sendMessage({ type: "JOB_DETECTED", job: idleJob }).catch((e: unknown) => {
       logger.error("Failed to send job event", e);
     });
@@ -90,6 +91,7 @@ function handleCharacterSkillsXp(data: Record<string, unknown>): void {
       data: { skill, xp: delta },
     };
 
+    logger.info(`XP gained: ${skill} +${delta}`);
     sendMessage({ type: "XP_GAINED", event }).catch((e: unknown) => {
       logger.error("Failed to send XP event", e);
     });
@@ -125,6 +127,7 @@ function handleCharacterCombat(data: Record<string, unknown>): void {
     data: { result },
   };
 
+  logger.info(`Combat event: ${eventType}`);
   sendMessage({ type: "SESSION_EVENT", event }).catch((e: unknown) => {
     logger.error("Failed to send combat event", e);
   });
@@ -145,6 +148,7 @@ function handleRewardsResponse(data: unknown): void {
       data: { itemName },
     };
 
+    logger.info(`Reward collected: ${itemName}`);
     sendMessage({ type: "ITEM_COLLECTED", event }).catch((e: unknown) => {
       logger.error("Failed to send item event", e);
     });
@@ -152,6 +156,8 @@ function handleRewardsResponse(data: unknown): void {
 }
 
 export function handleInterceptedResponse(response: InterceptedResponse): void {
+  logger.info(`Intercepted response: ${response.url} (status ${response.status})`);
+
   if (response.status < 200 || response.status >= 300) return;
 
   const data = tryParseJson(response.body);
@@ -160,10 +166,13 @@ export function handleInterceptedResponse(response: InterceptedResponse): void {
   const { url } = response;
 
   if (API_PATTERNS.character.test(url)) {
+    logger.info("Matched pattern: character");
     handleCharacterResponse(data);
   } else if (API_PATTERNS.rewards.test(url)) {
+    logger.info("Matched pattern: rewards");
     handleRewardsResponse(data);
   } else if (API_PATTERNS.jobs.test(url)) {
+    logger.info("Matched pattern: jobs");
     handleCharacterJobs(isRecord(data) ? data : {});
   }
 }

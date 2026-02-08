@@ -179,6 +179,40 @@ describe("network-handler", () => {
       expect(sentMessages).toHaveLength(0);
     });
 
+    it("should ignore /character/all endpoint", () => {
+      const response = buildResponse({
+        url: "https://www.berrus.app/api/protected/character/all",
+        body: JSON.stringify([{ name: "char1" }, { name: "char2" }]),
+      });
+
+      handleInterceptedResponse(response);
+
+      expect(sentMessages).toHaveLength(0);
+    });
+
+    it("should match character URL with query string", () => {
+      const response = buildResponse({
+        url: "https://www.berrus.app/api/protected/character/my-char?include=stats",
+        body: JSON.stringify({
+          jobs: [
+            {
+              jobId: "mine-copper",
+              status: "active",
+              skill: "mining",
+              startedAt: 1000,
+              durationMs: 5000,
+            },
+          ],
+        }),
+      });
+
+      handleInterceptedResponse(response);
+
+      expect(sentMessages).toHaveLength(1);
+      const msg = sentMessages[0] as Record<string, unknown>;
+      expect(msg["type"]).toBe("JOB_DETECTED");
+    });
+
     it("should ignore non-matching URLs", () => {
       const response = buildResponse({
         url: "https://www.berrus.app/api/some-other-endpoint",
